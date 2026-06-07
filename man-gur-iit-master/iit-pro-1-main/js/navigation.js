@@ -142,6 +142,10 @@ function isAnnexureViewId(id) {
   return /^anx[1-7]$/.test(id) || /^annexure-[b-k]$/.test(id);
 }
 
+function isCoreAnnexureViewId(id) {
+  return /^anx[1-7]$/.test(id);
+}
+
 function getAnnexureInstructionText(id) {
   const map = {
     anx1: 'Fill the source tables, upload section Excel files where needed, and use the live preview to check Annexure I before download.',
@@ -176,6 +180,7 @@ function normalizeAnnexureViewLayout(id) {
   if (!isAnnexureViewId(id)) return;
   const view = document.getElementById('view-' + id);
   if (!view) return;
+  const shouldHideInstructions = isCoreAnnexureViewId(id);
 
   const existingLayout = view.querySelector(':scope > .annexure-unified-layout, :scope > .annexure-line-layout, :scope > .g2');
   if (existingLayout) {
@@ -187,7 +192,13 @@ function normalizeAnnexureViewLayout(id) {
       cols[1].classList.add('annexure-line-instructions');
       instructions = cols[1];
     }
-    if (!instructions) existingLayout.appendChild(buildAnnexureInstructions(id));
+    if (shouldHideInstructions) {
+      if (instructions) instructions.remove();
+      existingLayout.classList.add('annexure-no-instructions');
+      existingLayout.style.gridTemplateColumns = 'minmax(0, 1fr)';
+    } else if (!instructions) {
+      existingLayout.appendChild(buildAnnexureInstructions(id));
+    }
     return;
   }
 
@@ -203,12 +214,120 @@ function normalizeAnnexureViewLayout(id) {
   });
 
   layout.appendChild(main);
-  layout.appendChild(buildAnnexureInstructions(id));
+  if (shouldHideInstructions) {
+    layout.classList.add('annexure-no-instructions');
+    layout.style.gridTemplateColumns = 'minmax(0, 1fr)';
+  } else {
+    layout.appendChild(buildAnnexureInstructions(id));
+  }
   if (header && header.nextSibling) {
     view.insertBefore(layout, header.nextSibling);
   } else {
     view.appendChild(layout);
   }
+}
+
+function refreshCoreAnnexurePreview(id) {
+  const fn = {
+    anx1: window.exportAnx1PDF,
+    anx2: window.exportAnx2PDF,
+    anx3: window.exportAnx3PDF,
+    anx4: window.exportAnx4PDF,
+    anx5: window.exportAnx5PDF,
+    anx6: window.exportAnx6PDF,
+    anx7: window.exportAnx7PDF
+  }[id];
+  if (typeof fn === 'function') {
+    setTimeout(() => fn(null, true), 80);
+  }
+}
+
+function addGenericAnnexureRow(table, viewId) {
+  const tbody = table ? table.querySelector('tbody') : null;
+  if (!tbody) return;
+  const templateRow = tbody.rows[tbody.rows.length - 1];
+  const columnCount = table.querySelectorAll('thead th').length || templateRow?.cells.length || 1;
+  const tr = document.createElement('tr');
+
+  for (let i = 0; i < columnCount; i++) {
+    const sourceCell = templateRow ? templateRow.cells[i] : null;
+    const td = document.createElement('td');
+    if (sourceCell && sourceCell.querySelector('button')) {
+      td.innerHTML = sourceCell.innerHTML;
+    } else if (sourceCell && sourceCell.querySelector('select')) {
+      td.innerHTML = sourceCell.innerHTML;
+      td.querySelectorAll('select').forEach(select => { select.selectedIndex = 0; });
+    } else {
+      td.contentEditable = 'true';
+      td.textContent = i === 0 && /sl\.?no|sr\.?no|serial/i.test(table.querySelectorAll('thead th')[0]?.innerText || '') ? String(tbody.rows.length + 1) : 'NA';
+    }
+    tr.appendChild(td);
+  }
+
+  tbody.appendChild(tr);
+  if (window.initLucide) window.initLucide();
+  refreshCoreAnnexurePreview(viewId);
+}
+
+function addGenericAnnexureColumn(table, viewId) {
+  if (!table) return;
+  const headerRow = table.querySelector('thead tr');
+  const actionHeader = headerRow ? Array.from(headerRow.children).find(th => th.classList.contains('no-print') || /action/i.test(th.innerText || '')) : null;
+  const th = document.createElement('th');
+  th.contentEditable = 'true';
+  th.textContent = 'New Column';
+  th.style.minWidth = '120px';
+  if (headerRow) headerRow.insertBefore(th, actionHeader || null);
+
+  table.querySelectorAll('tbody tr').forEach(row => {
+    const actionCell = Array.from(row.children).find(td => td.querySelector('button') || td.classList.contains('no-print'));
+    const td = document.createElement('td');
+    td.contentEditable = 'true';
+    td.textContent = 'NA';
+    row.insertBefore(td, actionCell || null);
+  });
+
+  refreshCoreAnnexurePreview(viewId);
+}
+
+function addCoreAnnexureTableControls(id) {
+  if (!isCoreAnnexureViewId(id)) return;
+  const view = document.getElementById('view-' + id);
+  if (!view) return;
+  view.querySelectorAll('table').forEach(table => {
+    if (table.dataset.liveControlsAttached === 'true') return;
+    table.dataset.liveControlsAttached = 'true';
+    const wrap = table.closest('.tbl-wrap') || table.parentElement;
+    if (!wrap || wrap.nextElementSibling?.classList.contains('anx-table-live-actions')) return;
+
+    const actions = document.createElement('div');
+    actions.className = 'anx-table-live-actions';
+    actions.innerHTML = `
+      <button type="button" class="btn btn-xs btn-outline anx-live-add-row">
+        <i data-lucide="plus" style="width:12px;height:12px;"></i>
+        <span>Add Row</span>
+      </button>
+      <button type="button" class="btn btn-xs btn-outline anx-live-add-column">
+        <i data-lucide="columns-3" style="width:12px;height:12px;"></i>
+        <span>Add Column</span>
+      </button>`;
+    wrap.insertAdjacentElement('afterend', actions);
+
+    actions.querySelector('.anx-live-add-row')?.addEventListener('click', () => {
+      const block = table.closest('.card, .anx-section') || view;
+      const existingAddRow = Array.from(block.querySelectorAll('button')).find(btn => {
+        const text = (btn.innerText || '').trim().toLowerCase();
+        const onclick = btn.getAttribute('onclick') || '';
+        return btn !== actions.querySelector('.anx-live-add-row') && text.includes('add row') && !onclick.includes('addGenericAnnexureRow');
+      });
+      if (existingAddRow) existingAddRow.click();
+      else addGenericAnnexureRow(table, id);
+      refreshCoreAnnexurePreview(id);
+    });
+
+    actions.querySelector('.anx-live-add-column')?.addEventListener('click', () => addGenericAnnexureColumn(table, id));
+  });
+  if (window.initLucide) window.initLucide();
 }
 
 function repairMainContentStructure() {
@@ -334,6 +453,7 @@ function showView(id, btn, push = true) {
   }
   if (S.activeProject && typeof updateActiveProjectCardUI === 'function') updateActiveProjectCardUI();
   normalizeAnnexureViewLayout(id);
+  addCoreAnnexureTableControls(id);
 
   const previewSections = ['front-matter', 'chapters', 'plates', 'anx1', 'anx2', 'anx3', 'anx4', 'anx5', 'anx6', 'anx7', 'annexure-b', 'annexure-c', 'annexure-d', 'annexure-e', 'annexure-f', 'annexure-g', 'annexure-h', 'annexure-i', 'annexure-j', 'annexure-k'];
   if (previewSections.includes(id)) {

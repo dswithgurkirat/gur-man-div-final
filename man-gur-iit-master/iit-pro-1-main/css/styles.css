@@ -1045,15 +1045,41 @@ body.preview-open .app-workspace {
   gap: 16px;
 }
 
+.annexure-unified-layout.annexure-no-instructions,
+.annexure-line-layout.annexure-no-instructions {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
 .annexure-line-main {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 18px;
+  width: 100%;
 }
 
 .annexure-line-instructions {
   min-width: 0;
+}
+
+.annexure-no-instructions .annexure-line-instructions,
+.view[id^="view-anx"] > .annexure-line-instructions {
+  display: none !important;
+}
+
+.anx-table-live-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  flex-wrap: wrap;
+}
+
+.anx-table-live-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .annexure-line-instructions {
